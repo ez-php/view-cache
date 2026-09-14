@@ -1,0 +1,47 @@
+{
+  "name": "ez-php/view-cache",
+  "version": "2.3.3",
+  "description": "Output-caching decorator for ez-php/view's ViewEngine, with mtime-based invalidation",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Andreas Uretschnig",
+      "email": "andreas.uretschnig@gmail.com"
+    }
+  ],
+  "keywords": ["view-cache", "template", "cache", "php", "ez-php"],
+  "homepage": "https://github.com/ez-php/view-cache",
+  "support": {
+    "issues": "https://github.com/ez-php/view-cache/issues",
+    "source": "https://github.com/ez-php/view-cache"
+  },
+  "require": {
+    "php": "^8.5",
+    "ez-php/view": "^2.0"
+  },
+  "require-dev": {
+    "ez-php/docker": "^2.0",
+    "phpunit/phpunit": "^13.0",
+    "phpstan/phpstan": "^2.1",
+    "friendsofphp/php-cs-fixer": "^3.94",
+    "phpstan/phpstan-strict-rules": "^2.0",
+    "phpstan/phpstan-deprecation-rules": "^2.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "EzPhp\\ViewCache\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\": "tests/"
+    }
+  },
+  "scripts": {
+    "cs": "php-cs-fixer fix",
+    "analyse": "phpstan analyse",
+    "test": "phpunit",
+    "full": "composer analyse && composer cs && composer test"
+  }
+}

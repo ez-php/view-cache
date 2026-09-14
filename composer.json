@@ -1,6 +1,6 @@
 {
   "name": "ez-php/view-cache",
-  "version": "2.3.8",
+  "version": "2.3.9",
   "description": "Output-caching decorator for ez-php/view's ViewEngine, with mtime-based invalidation",
   "type": "library",
   "license": "MIT",

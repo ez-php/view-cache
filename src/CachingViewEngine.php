@@ -23,11 +23,16 @@ final class CachingViewEngine
      * @param string     $viewPath  Absolute path to the directory containing template files — must match the
      *                              path `$engine` was constructed with, so mtime checks see the real source file.
      * @param string     $cachePath Absolute path to the directory cache entries are written to.
+     * @param bool       $trackDependencies When true, every template file resolved during a render (layouts and
+     *                                      partials, recursively) is recorded and its mtime checked on later
+     *                                      hits, so editing a partial or layout invalidates the entry. Off by
+     *                                      default: only the top-level template's mtime is checked.
      */
     public function __construct(
         private readonly ViewEngine $engine,
         private readonly string $viewPath,
         private readonly string $cachePath,
+        private readonly bool $trackDependencies = false,
     ) {
     }
 
@@ -58,8 +63,23 @@ final class CachingViewEngine
             return $cached;
         }
 
-        $output = $this->engine->render($template, $data);
-        $this->writeCache($cacheFile, $sourceMtime, $output);
+        $dependencies = [];
+
+        if ($this->trackDependencies) {
+            $this->engine->onResolve(static function (string $path) use (&$dependencies): void {
+                $dependencies[$path] = (int) filemtime($path);
+            });
+        }
+
+        try {
+            $output = $this->engine->render($template, $data);
+        } finally {
+            if ($this->trackDependencies) {
+                $this->engine->onResolve(null);
+            }
+        }
+
+        $this->writeCache($cacheFile, $sourceMtime, $output, $dependencies);
 
         return $output;
     }
@@ -116,6 +136,16 @@ final class CachingViewEngine
             return null;
         }
 
+        $dependencies = $entry['dependencies'] ?? [];
+
+        if (is_array($dependencies)) {
+            foreach ($dependencies as $path => $mtime) {
+                if (!is_string($path) || !is_file($path) || (int) filemtime($path) !== $mtime) {
+                    return null;
+                }
+            }
+        }
+
         $output = $entry['output'] ?? null;
 
         return is_string($output) ? $output : null;
@@ -127,10 +157,12 @@ final class CachingViewEngine
      * @param string $cacheFile   Path to the cache entry file.
      * @param int    $sourceMtime Mtime of the source template at render time.
      * @param string $output      Rendered output to cache.
+     * @param array<string, int> $dependencies Mtimes of every layout/partial file the render resolved,
+     *                                         keyed by absolute path; empty unless dependency tracking is on.
      *
      * @return void
      */
-    private function writeCache(string $cacheFile, int $sourceMtime, string $output): void
+    private function writeCache(string $cacheFile, int $sourceMtime, string $output, array $dependencies = []): void
     {
         $dir = dirname($cacheFile);
 
@@ -138,6 +170,6 @@ final class CachingViewEngine
             mkdir($dir, 0o755, true);
         }
 
-        file_put_contents($cacheFile, serialize(['mtime' => $sourceMtime, 'output' => $output]));
+        file_put_contents($cacheFile, serialize(['mtime' => $sourceMtime, 'output' => $output, 'dependencies' => $dependencies]));
     }
 }

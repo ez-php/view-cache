@@ -94,6 +94,95 @@ final class CachingViewEngineTest extends TestCase
         $this->cachingEngine->render('missing');
     }
 
+    // ── dependency tracking (opt-in) ──────────────────────────────────────────
+
+    private function trackingEngine(): CachingViewEngine
+    {
+        return new CachingViewEngine(new ViewEngine($this->viewPath), $this->viewPath, $this->cachePath, trackDependencies: true);
+    }
+
+    private function changeContents(string $path, string $contents): void
+    {
+        $mtime = (int) filemtime($path);
+        file_put_contents($path, $contents);
+        touch($path, $mtime + 5);
+    }
+
+    public function test_default_mode_ignores_a_changed_partial(): void
+    {
+        $this->writeTemplate('page', '<?= $this->partial("part") ?>');
+        $partial = $this->writeTemplate('part', 'v1');
+        $this->cachingEngine->render('page');
+
+        $this->changeContents($partial, 'v2');
+
+        self::assertSame('v1', $this->cachingEngine->render('page'));
+    }
+
+    public function test_tracking_mode_invalidates_when_a_partial_changes(): void
+    {
+        $engine = $this->trackingEngine();
+        $this->writeTemplate('page', '<?= $this->partial("part") ?>');
+        $partial = $this->writeTemplate('part', 'v1');
+        self::assertSame('v1', $engine->render('page'));
+
+        $this->changeContents($partial, 'v2');
+
+        self::assertSame('v2', $engine->render('page'));
+    }
+
+    public function test_tracking_mode_invalidates_when_a_layout_changes(): void
+    {
+        $engine = $this->trackingEngine();
+        $layout = $this->writeTemplate('layout', '[<?= $this->yield("body") ?>]');
+        $this->writeTemplate('page', '<?php $this->extends("layout") ?><?php $this->section("body") ?>b<?php $this->endSection() ?>');
+        self::assertSame('[b]', $engine->render('page'));
+
+        $this->changeContents($layout, '{<?= $this->yield("body") ?>}');
+
+        self::assertSame('{b}', $engine->render('page'));
+    }
+
+    public function test_tracking_mode_invalidates_when_a_nested_partial_changes(): void
+    {
+        $engine = $this->trackingEngine();
+        $this->writeTemplate('page', '<?= $this->partial("outer") ?>');
+        $this->writeTemplate('outer', '<?= $this->partial("inner") ?>');
+        $inner = $this->writeTemplate('inner', 'v1');
+        $engine->render('page');
+
+        $this->changeContents($inner, 'v2');
+
+        self::assertSame('v2', $engine->render('page'));
+    }
+
+    public function test_tracking_mode_serves_the_cache_when_nothing_changed(): void
+    {
+        $engine = $this->trackingEngine();
+        $this->writeTemplate('page', '<?= $this->partial("part") ?>');
+        $partial = $this->writeTemplate('part', 'v1');
+        $engine->render('page');
+
+        $mtime = (int) filemtime($partial);
+        file_put_contents($partial, 'v2');
+        touch($partial, $mtime);
+
+        self::assertSame('v1', $engine->render('page'));
+    }
+
+    public function test_tracking_mode_invalidates_when_a_dependency_is_deleted(): void
+    {
+        $engine = $this->trackingEngine();
+        $this->writeTemplate('page', '<?= $this->partial("part") ?>');
+        $partial = $this->writeTemplate('part', 'v1');
+        $engine->render('page');
+
+        unlink($partial);
+
+        $this->expectException(\EzPhp\View\ViewException::class);
+        $engine->render('page');
+    }
+
     private function writeTemplate(string $name, string $contents): string
     {
         $path = $this->viewPath . '/' . $name . '.php';

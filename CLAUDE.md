@@ -264,7 +264,7 @@ src/
 
 tests/
 ├── TestCase.php                 — Base PHPUnit test case
-└── CachingViewEngineTest.php    — Cold/warm cache, invalidation, per-data caching, missing-template pass-through
+└── CachingViewEngineTest.php    — Cold/warm cache, invalidation, per-data caching, missing-template pass-through, opt-in partial/layout dependency tracking
 ```
 
 ---
@@ -285,6 +285,11 @@ On each call:
 4. A cache hit requires the entry's recorded mtime to equal the source file's *current* mtime — otherwise it's
    treated as a miss, the underlying engine renders fresh output, and the entry is overwritten.
 
+**Opt-in dependency tracking** (`trackDependencies: true`, off by default): on a miss, a listener registered via
+`ViewEngine::onResolve()` records every template file the render resolves — layouts and partials, recursively —
+with its mtime, stored in the cache entry. On a hit, every recorded dependency must still exist with an
+unchanged mtime, so editing a partial or layout invalidates the parent's entry.
+
 ---
 
 ## Design Decisions and Constraints
@@ -304,9 +309,17 @@ On each call:
 - **`$viewPath` passed in separately from the `ViewEngine`.** The constructor takes both a `ViewEngine` and the
   same `$viewPath` it was built with, rather than trying to recover the path from the engine instance — it has
   no accessor for it, and reflection would violate "no hidden magic."
-- **Invalidation only covers the top-level template file** — not any partial or the resolved layout it pulls in
-  mid-render. A change to a partial/layout alone does not bust a parent template's cache entry; see "What Does
-  NOT Belong Here" below.
+- **Invalidation covers only the top-level template by default; partial/layout tracking is opt-in.** Default
+  behaviour is unchanged: a change to a partial/layout alone does not bust a parent's entry. With
+  `trackDependencies: true`, the render's resolved files are recorded via `ViewEngine::onResolve()` (an additive,
+  opt-in observation hook added to `ez-php/view` — rendering is identical with or without a listener) and their
+  mtimes are part of the validity check. The listener is always detached in `finally`, so a failed render never
+  leaves it attached. Dependencies are recorded on a miss only; entries written before tracking was enabled carry
+  no dependency list and are treated as valid until their top-level mtime changes.
+- **Release ordering.** `onResolve()` exists only in `ez-php/view` releases that include it; a standalone
+  install of this package needs a matching `ez-php/view` version (the monorepo path repositories always do).
+- **A deleted dependency surfaces as `ViewException`.** Tracking mode treats a missing dependency as a miss;
+  the re-render then fails with the underlying engine's normal "Template not found" error.
 - **Data must be `serialize()`-safe.** Render data becomes part of the cache key via `serialize()`; a closure
   or resource in `$data` throws at cache-key time rather than silently bypassing the cache. Template data in
   this framework is conventionally scalars/arrays/DTOs, so this is not expected to be a real constraint.
@@ -340,7 +353,7 @@ On each call:
 
 | Concern | Where it belongs |
 |---|---|
-| Cache invalidation for partials/layouts pulled in mid-render | Not handled — a change to a partial or layout file alone does not bust a parent template's cache entry. Out of scope for this first pass; flag in `EZ_PHP_IDEAS.md` if it becomes a real gap. |
+| Dynamic dependency discovery beyond what `ViewEngine` resolves | Only files the engine actually resolves during the render are tracked; files read some other way (e.g. `include` inside a template) are not |
 | Cache store drivers (Redis, APCu, etc.) beyond the filesystem | A future enhancement, not YAGNI'd away permanently — the current file-based store matches this module's zero-dependency scope |
 | Deciding *whether* caching is active per environment, and wiring the cache directory | Application layer (a service provider that conditionally binds `CachingViewEngine` vs. the plain `ViewEngine`) |
 | Template compilation to an intermediate format (Blade-style) | Out of scope — `ez-php/view` templates are plain PHP; see Design Decisions above |

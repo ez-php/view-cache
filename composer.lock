@@ -124,16 +124,16 @@
         },
         {
             "name": "ez-php/view",
-            "version": "2.4.3",
+            "version": "2.4.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/ez-php/view.git",
-                "reference": "f231b0dff9d1b93694372d57a11089403fa6e5eb"
+                "reference": "49818be24ff60113beb1aeca7c3ac8c91f271003"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/ez-php/view/zipball/f231b0dff9d1b93694372d57a11089403fa6e5eb",
-                "reference": "f231b0dff9d1b93694372d57a11089403fa6e5eb",
+                "url": "https://api.github.com/repos/ez-php/view/zipball/49818be24ff60113beb1aeca7c3ac8c91f271003",
+                "reference": "49818be24ff60113beb1aeca7c3ac8c91f271003",
                 "shasum": ""
             },
             "require": {
@@ -178,7 +178,7 @@
                 "issues": "https://github.com/ez-php/view/issues",
                 "source": "https://github.com/ez-php/view"
             },
-            "time": "2026-09-19T01:06:27+00:00"
+            "time": "2026-09-19T13:36:49+00:00"
         }
     ],
     "packages-dev": [

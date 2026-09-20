@@ -191,6 +191,28 @@ final class CachingViewEngineTest extends TestCase
         return $path;
     }
 
+    public function test_it_does_not_instantiate_objects_found_in_a_cache_entry(): void
+    {
+        $path = $this->writeTemplate('greeting', '<?= "fresh" ?>');
+        $this->cachingEngine->render('greeting');
+
+        $files = glob($this->cachePath . '/*.cache');
+        self::assertIsArray($files);
+        self::assertCount(1, $files);
+
+        CacheEntryGadget::$woken = false;
+        file_put_contents($files[0], serialize([
+            'mtime' => (int) filemtime($path),
+            'output' => new CacheEntryGadget(),
+            'dependencies' => [],
+        ]));
+
+        $output = $this->cachingEngine->render('greeting');
+
+        self::assertSame('fresh', $output);
+        self::assertFalse(CacheEntryGadget::$woken);
+    }
+
     private function removeDirectory(string $directory): void
     {
         if (!is_dir($directory)) {
@@ -218,5 +240,18 @@ final class CachingViewEngineTest extends TestCase
         }
 
         rmdir($directory);
+    }
+}
+
+/**
+ * Fixture whose `__wakeup()` records that it was unserialized.
+ */
+final class CacheEntryGadget
+{
+    public static bool $woken = false;
+
+    public function __wakeup(): void
+    {
+        self::$woken = true;
     }
 }

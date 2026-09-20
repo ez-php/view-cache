@@ -130,7 +130,7 @@ final class CachingViewEngine
         }
 
         /** @var mixed $entry */
-        $entry = unserialize((string) file_get_contents($cacheFile));
+        $entry = unserialize((string) file_get_contents($cacheFile), ['allowed_classes' => false]);
 
         if (!is_array($entry) || ($entry['mtime'] ?? null) !== $sourceMtime) {
             return null;

@@ -10,19 +10,23 @@ use EzPhp\View\ViewEngine;
  * Class CachingViewEngine
  *
  * Decorates a `ViewEngine` with an output cache: a rendered template is
- * written to a cache file keyed by template name and render data, and
- * served back on the next call as long as the source template's mtime has
- * not changed since the entry was written.
+ * stored under a key derived from template name and render data, and served
+ * back on the next call as long as the source template's mtime has not
+ * changed since the entry was written. Entries live in a ViewCacheStoreInterface
+ * — files by default, or any ez-php/cache driver via CacheViewCacheStore.
  *
  * @package EzPhp\ViewCache
  */
 final class CachingViewEngine
 {
+    private readonly ViewCacheStoreInterface $store;
+
     /**
      * @param ViewEngine $engine    The underlying engine that performs the actual render.
      * @param string     $viewPath  Absolute path to the directory containing template files — must match the
      *                              path `$engine` was constructed with, so mtime checks see the real source file.
-     * @param string     $cachePath Absolute path to the directory cache entries are written to.
+     * @param string|ViewCacheStoreInterface $cache A directory for file entries (FileViewCacheStore),
+     *                                             or any store — e.g. CacheViewCacheStore over Redis.
      * @param bool       $trackDependencies When true, every template file resolved during a render (layouts and
      *                                      partials, recursively) is recorded and its mtime checked on later
      *                                      hits, so editing a partial or layout invalidates the entry. Off by
@@ -31,9 +35,10 @@ final class CachingViewEngine
     public function __construct(
         private readonly ViewEngine $engine,
         private readonly string $viewPath,
-        private readonly string $cachePath,
+        string|ViewCacheStoreInterface $cache,
         private readonly bool $trackDependencies = false,
     ) {
+        $this->store = is_string($cache) ? new FileViewCacheStore($cache) : $cache;
     }
 
     /**
@@ -55,9 +60,9 @@ final class CachingViewEngine
         }
 
         $sourceMtime = (int) filemtime($sourcePath);
-        $cacheFile = $this->cacheFilePath($template, $data);
+        $key = $this->cacheKey($template, $data);
 
-        $cached = $this->readCache($cacheFile, $sourceMtime);
+        $cached = $this->readCache($key, $sourceMtime);
 
         if ($cached !== null) {
             return $cached;
@@ -79,7 +84,7 @@ final class CachingViewEngine
             }
         }
 
-        $this->writeCache($cacheFile, $sourceMtime, $output, $dependencies);
+        $this->store->put($key, serialize(['mtime' => $sourceMtime, 'output' => $output, 'dependencies' => $dependencies]));
 
         return $output;
     }
@@ -100,37 +105,38 @@ final class CachingViewEngine
     }
 
     /**
-     * Derive the cache file path for a template + data combination.
+     * The store key for a template + data combination.
      *
      * @param string               $template Template name in dot-notation.
      * @param array<string, mixed> $data     Render data.
      *
      * @return string
      */
-    private function cacheFilePath(string $template, array $data): string
+    private function cacheKey(string $template, array $data): string
     {
-        $key = hash('sha256', $template . '|' . serialize($data));
-
-        return rtrim($this->cachePath, '/\\') . \DIRECTORY_SEPARATOR . $key . '.cache';
+        return hash('sha256', $template . '|' . serialize($data));
     }
 
     /**
-     * Read a cache entry, returning its output only if the recorded mtime
-     * still matches the source template's current mtime.
+     * Read an entry, returning its output only if the recorded mtime still
+     * matches the source template's current mtime (and, when tracked, every
+     * dependency's). Objects in an entry are never instantiated.
      *
-     * @param string $cacheFile   Path to the cache entry file.
+     * @param string $key         Store key.
      * @param int    $sourceMtime Current mtime of the source template.
      *
      * @return string|null
      */
-    private function readCache(string $cacheFile, int $sourceMtime): ?string
+    private function readCache(string $key, int $sourceMtime): ?string
     {
-        if (!is_file($cacheFile)) {
+        $raw = $this->store->get($key);
+
+        if ($raw === null) {
             return null;
         }
 
         /** @var mixed $entry */
-        $entry = unserialize((string) file_get_contents($cacheFile), ['allowed_classes' => false]);
+        $entry = unserialize($raw, ['allowed_classes' => false]);
 
         if (!is_array($entry) || ($entry['mtime'] ?? null) !== $sourceMtime) {
             return null;
@@ -149,27 +155,5 @@ final class CachingViewEngine
         $output = $entry['output'] ?? null;
 
         return is_string($output) ? $output : null;
-    }
-
-    /**
-     * Write a cache entry, creating the cache directory if it doesn't exist yet.
-     *
-     * @param string $cacheFile   Path to the cache entry file.
-     * @param int    $sourceMtime Mtime of the source template at render time.
-     * @param string $output      Rendered output to cache.
-     * @param array<string, int> $dependencies Mtimes of every layout/partial file the render resolved,
-     *                                         keyed by absolute path; empty unless dependency tracking is on.
-     *
-     * @return void
-     */
-    private function writeCache(string $cacheFile, int $sourceMtime, string $output, array $dependencies = []): void
-    {
-        $dir = dirname($cacheFile);
-
-        if (!is_dir($dir)) {
-            mkdir($dir, 0o755, true);
-        }
-
-        file_put_contents($cacheFile, serialize(['mtime' => $sourceMtime, 'output' => $output, 'dependencies' => $dependencies]));
     }
 }

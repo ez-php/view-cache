@@ -28,10 +28,11 @@ docker compose exec app composer full
 Executes in order:
 1. `sync_guidelines.php --check` — fails if any `CLAUDE.md` has drifted from this file
 2. `check_test_classes.php` — fails on a duplicate test class name (all packages share the `Tests\` namespace, so a collision is a fatal error in the aggregated run, not a test failure)
-3. `phpstan analyse` — static analysis, level 9, config: `phpstan.neon`
-4. `php-cs-fixer fix` — auto-fixes style (`@PSR12` + `@PHP83Migration` + strict rules)
+3. `check_module_deps.php` — fails when a package's code imports an ez-php package its `composer.json` does not declare (module `src`: `require`/`suggest`; tests: `require`/`require-dev` and their dependencies), or requires one it never uses
+4. `phpstan analyse` — static analysis, level 9, config: `phpstan.neon`
+5. `php-cs-fixer fix` — auto-fixes style (`@PSR12` + `@PHP83Migration` + strict rules)
    *(Note: `@PHP85Migration` does not exist yet in php-cs-fixer; `@PHP83Migration` is the highest available and is used intentionally even though the project targets PHP 8.5)*
-5. `phpunit` — all tests with coverage
+6. `phpunit` — all tests with coverage
 
 Individual commands when needed:
 ```
@@ -40,6 +41,7 @@ composer cs                  # CS Fixer only
 composer test                # PHPUnit only
 composer guidelines:check    # CLAUDE.md drift only
 composer test-classes:check  # duplicate test class names only
+composer module-deps:check   # undeclared / unused ez-php package dependencies only
 ```
 
 **PHPStan:** never suppress with `@phpstan-ignore-line` — always fix the root cause.
@@ -198,20 +200,22 @@ vendor/bin/docker-init
 
 This copies `Dockerfile`, `docker-compose.yml`, `.env.example`, `start.sh`, and `docker/` into the module, replacing `{{MODULE_NAME}}` placeholders. Existing files are never overwritten.
 
-Pass `--services` to merge MySQL/Redis/Meilisearch service definitions directly into `docker-compose.yml` and uncomment the matching sections in `.env.example`, instead of adapting them by hand afterward:
+Pass `--services` to merge MySQL/Redis/Meilisearch/Memcached/Mailpit service definitions directly into `docker-compose.yml` and uncomment the matching sections in `.env.example`, instead of adapting them by hand afterward:
 
 ```
 vendor/bin/docker-init --services=mysql
 vendor/bin/docker-init --services=redis
 vendor/bin/docker-init --services=meilisearch
 vendor/bin/docker-init --services=mysql,redis
+vendor/bin/docker-init --services=memcached,mailpit
 ```
 
-Pass `--extensions` to merge PHP extension install blocks (apt packages plus `docker-php-ext-install`/`pecl` lines) directly into `docker/app/Dockerfile`, instead of hand-editing it afterward — supported extensions: `bcmath`, `gmp`, `gd`, `imagick`:
+Pass `--extensions` to merge PHP extension install blocks (apt packages plus `docker-php-ext-install`/`pecl` lines) directly into `docker/app/Dockerfile`, instead of hand-editing it afterward — supported extensions: `bcmath`, `gmp`, `gd`, `imagick`, `memcached`, `apcu` (with `apc.enable_cli=1`):
 
 ```
 vendor/bin/docker-init --extensions=gmp,bcmath
 vendor/bin/docker-init --extensions=gd,imagick
+vendor/bin/docker-init --extensions=memcached,apcu
 ```
 
 When run from a module directory inside this monorepo, any requested extension not already present is also merged into the shared root `docker/app/Dockerfile` — the container `composer full` at the root actually runs against, distinct from the module's own standalone image.
@@ -260,8 +264,9 @@ When adding a new module, add `"$ROOT/modules/<name>"` to the `PACKAGES` array i
 # Package: ez-php/view-cache
 
 Output-caching decorator over `ez-php/view`'s `ViewEngine` — caches a rendered
-template's output to a file, keyed by template name and render data, and
-invalidates it based on the source template file's mtime.
+template's output in a store (files by default, or any `ez-php/cache` driver),
+keyed by template name and render data, and invalidates it based on the source
+template file's mtime.
 
 ---
 
@@ -269,11 +274,15 @@ invalidates it based on the source template file's mtime.
 
 ```
 src/
-└── CachingViewEngine.php        — Decorates a ViewEngine; caches render() output, mtime-invalidated
+├── CachingViewEngine.php        — Decorates a ViewEngine; caches render() output, mtime-invalidated
+├── ViewCacheStoreInterface.php  — get/put of opaque serialized entries
+├── FileViewCacheStore.php       — one <key>.cache file per entry (default; a string $cache becomes this)
+└── CacheViewCacheStore.php      — entries in any ez-php/cache CacheInterface (soft dependency)
 
 tests/
 ├── TestCase.php                 — Base PHPUnit test case
-└── CachingViewEngineTest.php    — Cold/warm cache, invalidation, per-data caching, missing-template pass-through, opt-in partial/layout dependency tracking
+├── CachingViewEngineTest.php    — Cold/warm cache, invalidation, per-data caching, missing-template pass-through, opt-in partial/layout dependency tracking
+└── ViewCacheStoreTest.php       — CachingViewEngine over CacheViewCacheStore (ArrayDriver): hit, mtime invalidation; FileViewCacheStore round trip
 ```
 
 ---
@@ -303,6 +312,7 @@ unchanged mtime, so editing a partial or layout invalidates the parent's entry.
 
 ## Design Decisions and Constraints
 
+- **Stores are swappable; validity stays in the engine.** `ViewCacheStoreInterface` only keeps opaque strings (the serialized entry), so a store never needs to know about mtimes or dependencies and every store invalidates identically. The constructor's third argument is `string|ViewCacheStoreInterface` — a path keeps the old behaviour through `FileViewCacheStore`, so existing call sites don't change. `CacheViewCacheStore` adapts `ez-php/cache` (a `suggest`) rather than a module-specific Redis client, so any configured cache driver shares output across servers. Unserializing keeps `allowed_classes => false` for every store.
 - **Output cache, not a compile cache.** The idea that seeded this module ("compile/cache templates to PHP
   files") pre-dates the fact that `ez-php/view` templates already *are* plain PHP files — there is no
   intermediate template language to compile. `modules/view/CLAUDE.md` notes OPcache already caches the
@@ -363,7 +373,7 @@ unchanged mtime, so editing a partial or layout invalidates the parent's entry.
 | Concern | Where it belongs |
 |---|---|
 | Dynamic dependency discovery beyond what `ViewEngine` resolves | Only files the engine actually resolves during the render are tracked; files read some other way (e.g. `include` inside a template) are not |
-| Cache store drivers (Redis, APCu, etc.) beyond the filesystem | A future enhancement, not YAGNI'd away permanently — the current file-based store matches this module's zero-dependency scope |
+| Store drivers with their own client (a Redis client, APCu calls) | Go through `ez-php/cache` and `CacheViewCacheStore` instead |
 | Deciding *whether* caching is active per environment, and wiring the cache directory | Application layer (a service provider that conditionally binds `CachingViewEngine` vs. the plain `ViewEngine`) |
 | Template compilation to an intermediate format (Blade-style) | Out of scope — `ez-php/view` templates are plain PHP; see Design Decisions above |
 | Cache invalidation/versioning across deploys (stale mtimes surviving a fresh checkout) | Application layer's deploy process (e.g. clearing the cache directory on deploy) |

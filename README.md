@@ -43,6 +43,11 @@ refresh a cached parent. Pass `trackDependencies: true` to record every layout a
 
 ```php
 $engine = new CachingViewEngine(new ViewEngine($viewPath), $viewPath, $cachePath, trackDependencies: true);
+
+// Share rendered output between servers: any ez-php/cache driver instead of a directory
+use EzPhp\ViewCache\CacheViewCacheStore;
+
+$engine = new CachingViewEngine(new ViewEngine($viewPath), $viewPath, new CacheViewCacheStore($cache, ttl: 3600));
 ```
 
 Requires an `ez-php/view` release that provides `ViewEngine::onResolve()`.

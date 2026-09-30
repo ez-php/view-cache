@@ -30,6 +30,9 @@ final readonly class CacheViewCacheStore implements ViewCacheStoreInterface
     ) {
     }
 
+    /**
+     * {@inheritdoc}
+     */
     public function get(string $key): ?string
     {
         $entry = $this->cache->get($this->prefix . $key);
@@ -37,6 +40,9 @@ final readonly class CacheViewCacheStore implements ViewCacheStoreInterface
         return is_string($entry) ? $entry : null;
     }
 
+    /**
+     * {@inheritdoc}
+     */
     public function put(string $key, string $entry): void
     {
         $this->cache->set($this->prefix . $key, $entry, $this->ttl);

@@ -6,6 +6,7 @@ namespace Tests;
 
 use EzPhp\Cache\ArrayDriver;
 use EzPhp\View\ViewEngine;
+use EzPhp\View\ViewException;
 use EzPhp\ViewCache\CacheViewCacheStore;
 use EzPhp\ViewCache\CachingViewEngine;
 use EzPhp\ViewCache\FileViewCacheStore;
@@ -84,5 +85,40 @@ final class ViewCacheStoreTest extends TestCase
 
         unlink($dir . '/abc.cache');
         rmdir($dir);
+    }
+
+    public function test_file_store_throws_when_the_directory_cannot_be_created(): void
+    {
+        // A regular file where the directory should go: mkdir() fails even as root.
+        $blocker = $this->viewPath . '/blocker';
+        file_put_contents($blocker, '');
+        $store = new FileViewCacheStore($blocker . '/cache');
+
+        try {
+            $this->expectException(ViewException::class);
+            $this->expectExceptionMessage('Cannot create view cache directory');
+
+            $store->put('abc', 'entry');
+        } finally {
+            unlink($blocker);
+        }
+    }
+
+    public function test_file_store_throws_when_the_entry_cannot_be_written(): void
+    {
+        // A directory named like the entry file: file_put_contents() fails.
+        $dir = $this->viewPath . '/store';
+        mkdir($dir . '/abc.cache', 0o755, true);
+        $store = new FileViewCacheStore($dir);
+
+        try {
+            $this->expectException(ViewException::class);
+            $this->expectExceptionMessage('Cannot write view cache entry');
+
+            $store->put('abc', 'entry');
+        } finally {
+            rmdir($dir . '/abc.cache');
+            rmdir($dir);
+        }
     }
 }

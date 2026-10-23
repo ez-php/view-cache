@@ -375,7 +375,7 @@ unchanged mtime, so editing a partial or layout invalidates the parent's entry.
 | Concern | Where it belongs |
 |---|---|
 | Dynamic dependency discovery beyond what `ViewEngine` resolves | Only files the engine actually resolves during the render are tracked; files read some other way (e.g. `include` inside a template) are not |
-| Store drivers with their own client (a Redis client, APCu calls) | Go through `ez-php/cache` and `CacheViewCacheStore` instead |
+| Store drivers with their own client (a Redis client, APCu calls) | Go through `ez-php/cache` (`RedisDriver`, `ApcuDriver`) and `CacheViewCacheStore` instead |
 | Deciding *whether* caching is active per environment, and wiring the cache directory | Application layer (a service provider that conditionally binds `CachingViewEngine` vs. the plain `ViewEngine`) |
 | Template compilation to an intermediate format (Blade-style) | Out of scope — `ez-php/view` templates are plain PHP; see Design Decisions above |
 | Cache invalidation/versioning across deploys (stale mtimes surviving a fresh checkout) | Application layer's deploy process (e.g. clearing the cache directory on deploy) |

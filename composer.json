@@ -18,14 +18,14 @@
   },
   "require": {
     "php": "^8.5",
-    "ez-php/view": "^2.0"
+    "ez-php/view": "^2.6.0"
   },
   "suggest": {
     "ez-php/cache": "Needed for CacheViewCacheStore (entries in Redis/Memcached/… instead of files)"
   },
   "require-dev": {
-    "ez-php/cache": "^2.0",
-    "ez-php/docker": "^2.0",
+    "ez-php/cache": "^2.6.0",
+    "ez-php/docker": "^2.6.0",
     "phpunit/phpunit": "^13.0",
     "phpstan/phpstan": "^2.1",
     "friendsofphp/php-cs-fixer": "^3.94",

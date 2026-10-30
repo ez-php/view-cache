@@ -1,6 +1,6 @@
 {
   "name": "ez-php/view-cache",
-  "version": "2.6.5",
+  "version": "2.7.0",
   "description": "Output-caching decorator for ez-php/view's ViewEngine, with mtime-based invalidation",
   "type": "library",
   "license": "MIT",
@@ -18,14 +18,14 @@
   },
   "require": {
     "php": "^8.5",
-    "ez-php/view": "^2.6.0"
+    "ez-php/view": "^2.7.0"
   },
   "suggest": {
     "ez-php/cache": "Needed for CacheViewCacheStore (entries in Redis/Memcached/… instead of files)"
   },
   "require-dev": {
-    "ez-php/cache": "^2.6.0",
-    "ez-php/docker": "^2.6.0",
+    "ez-php/cache": "^2.7.0",
+    "ez-php/docker": "^2.7.0",
     "phpunit/phpunit": "^13.0",
     "phpstan/phpstan": "^2.1",
     "friendsofphp/php-cs-fixer": "^3.94",
